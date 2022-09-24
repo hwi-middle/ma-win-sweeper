@@ -38,9 +38,10 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmd
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 {
-	static constexpr int MINE = -1;
-	static constexpr int MINE_NUM = 10;
-	static constexpr int BOARD_SIZE = 9;
+	constexpr int MINE = -1;
+	constexpr int MINE_NUM = 10;
+	constexpr int BOARD_SIZE = 9;
+
 	static HBRUSH defaultBrush;
 	static HBRUSH mineBrush;
 
@@ -48,47 +49,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 	PAINTSTRUCT ps;
 
 	static Board board(BOARD_SIZE, MINE_NUM);
-	RECT rects[BOARD_SIZE][BOARD_SIZE];
+	static RECT rects[BOARD_SIZE][BOARD_SIZE];
+	static std::pair<int, int> clickedRect = { -1,-1 };
 
 	switch (iMessage)
 	{
 	case WM_CREATE:
-		return 0;
-	case WM_PAINT:
 	{
-		hdc = BeginPaint(hWnd, &ps);
-
 		constexpr int OFFSET_X = 15;
 		constexpr int OFFSET_Y = 80;
 		constexpr int CELL_SIZE = 50;
-
 		int left = OFFSET_X;
 		int top = OFFSET_Y;
 		int right = CELL_SIZE + OFFSET_X;
 		int bottom = CELL_SIZE + OFFSET_Y;
-
-		mineBrush = CreateSolidBrush(RGB(255, 0, 0));
 		for (int r = 0; r < BOARD_SIZE; r++)
 		{
 			for (int c = 0; c < BOARD_SIZE; c++)
 			{
-				int cellMineNum = board.GetCellMineNum(r, c);
-				if (cellMineNum == -1)
-				{
-					defaultBrush = (HBRUSH)SelectObject(hdc, mineBrush);
-					Rectangle(hdc, left, top, right, bottom);
-				}
-				else
-				{
-					Rectangle(hdc, left, top, right, bottom);
-					RECT r{ left, top, right, bottom };
-					std::wstring cellMineNumText = std::to_wstring(cellMineNum);
-					DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &r, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
-				}
-
-
-
-				SelectObject(hdc, defaultBrush);
+				rects[r][c] = { left, top, right, bottom };
 
 				left += CELL_SIZE;
 				right += CELL_SIZE;
@@ -100,8 +79,68 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 			bottom += CELL_SIZE;
 		}
 
+		return 0;
+	}
+
+	case WM_PAINT:
+	{
+		hdc = BeginPaint(hWnd, &ps);
+
+		mineBrush = CreateSolidBrush(RGB(255, 0, 0));
+		for (int r = 0; r < BOARD_SIZE; r++)
+		{
+			for (int c = 0; c < BOARD_SIZE; c++)
+			{
+				int cellMineNum = board.GetCellMineNum(r, c);
+				if (cellMineNum == -1)
+				{
+					defaultBrush = (HBRUSH)SelectObject(hdc, mineBrush);
+					Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
+				}
+				else
+				{
+					Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
+					std::wstring cellMineNumText = std::to_wstring(cellMineNum);
+					DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+				}
+
+				if (clickedRect == std::make_pair(r, c))
+				{
+					Ellipse(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
+				}
+
+				SelectObject(hdc, defaultBrush);
+			}
+		}
+
 		DeleteObject(mineBrush);
 		EndPaint(hWnd, &ps);
+		return 0;
+	}
+
+	case WM_LBUTTONDOWN:
+	{
+		int mouseX = LOWORD(lParam);
+		int mouseY = HIWORD(lParam);
+
+		for (int r = 0; r < BOARD_SIZE; r++)
+		{
+			for (int c = 0; c < BOARD_SIZE; c++)
+			{
+				RECT rect = rects[r][c];
+
+				if (rect.left < mouseX && rect.right > mouseX && rect.top < mouseY && rect.bottom > mouseY)
+				{
+					clickedRect = { r, c };
+					InvalidateRect(hWnd, NULL, TRUE);
+					return 0;
+				}
+			}
+
+		}
+
+		clickedRect = { -1,-1 };
+		InvalidateRect(hWnd, NULL, TRUE);
 		return 0;
 	}
 
