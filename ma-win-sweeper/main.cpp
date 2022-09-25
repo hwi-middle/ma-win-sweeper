@@ -1,3 +1,4 @@
+#include <queue>
 #include <string>
 #include <vector>
 #include <Windows.h>
@@ -25,7 +26,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmd
 	WndClass.style = CS_HREDRAW | CS_VREDRAW;
 	RegisterClass(&WndClass);
 	hWnd = CreateWindow(lpszClass, lpszClass, WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, CW_USEDEFAULT, 500, 900,
+		CW_USEDEFAULT, CW_USEDEFAULT, 700, 900,
 		NULL, (HMENU)NULL, hInstance, NULL);
 	ShowWindow(hWnd, nCmdShow);
 
@@ -39,11 +40,12 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmd
 LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 {
 	constexpr int MINE = -1;
-	constexpr int MINE_NUM = 10;
-	constexpr int BOARD_SIZE = 9;
+	constexpr int MINE_NUM = 40;
+	constexpr int BOARD_SIZE = 16;
 
-	static HBRUSH defaultBrush;
-	static HBRUSH mineBrush;
+	HBRUSH defaultBrush;
+	HBRUSH openedBrush;
+	HBRUSH mineBrush;
 
 	HDC hdc;
 	PAINTSTRUCT ps;
@@ -58,7 +60,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 	{
 		constexpr int OFFSET_X = 15;
 		constexpr int OFFSET_Y = 80;
-		constexpr int CELL_SIZE = 50;
+		constexpr int CELL_SIZE = 40;
 		int left = OFFSET_X;
 		int top = OFFSET_Y;
 		int right = CELL_SIZE + OFFSET_X;
@@ -85,31 +87,70 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 	case WM_PAINT:
 	{
 		hdc = BeginPaint(hWnd, &ps);
-
+		SetBkMode(hdc, TRANSPARENT);
+		openedBrush = (HBRUSH)GetStockObject(LTGRAY_BRUSH);
 		mineBrush = CreateSolidBrush(RGB(255, 0, 0));
+
+		if (clickedRect != std::make_pair(-1, -1))
+		{
+			constexpr int DIRECTION_NUM = 8;
+			std::queue<std::pair<int, int>> bfsQueue;
+
+			int clickedR = clickedRect.first;
+			int clickedC = clickedRect.second;
+			board.SetCellState(clickedR, clickedC, CellState::Opened);
+			if (board.GetCellMineNum(clickedR, clickedC) == 0)
+			{
+				bfsQueue.push({ clickedR , clickedC });
+			}
+
+			constexpr int deltaR[DIRECTION_NUM] = { 1,0,-1,0,1,-1,-1,1 };
+			constexpr int deltaC[DIRECTION_NUM] = { 0,1,0,-1,-1,1,-1,1 };
+
+			while (!bfsQueue.empty())
+			{
+				std::pair<int, int> cur = bfsQueue.front();
+				bfsQueue.pop();
+
+				const int curR = cur.first;
+				const int curC = cur.second;
+
+				if (board.GetCellMineNum(curR, curC) != 0)
+				{
+					board.SetCellState(curR, curC, CellState::Opened);
+					continue;
+				}
+
+				for (int dir = 0; dir < DIRECTION_NUM; dir++)
+				{
+					const int newR = curR + deltaR[dir];
+					const int newC = curC + deltaC[dir];
+					if (newR < 0 || newR >= BOARD_SIZE || newC < 0 || newC >= BOARD_SIZE) continue;
+					if (board.GetCellState(newR, newC) == CellState::Opened) continue;
+
+					board.SetCellState(newR, newC, CellState::Opened);
+					bfsQueue.push({ newR,newC });
+				}
+			}
+		}
+
 		for (int r = 0; r < BOARD_SIZE; r++)
 		{
 			for (int c = 0; c < BOARD_SIZE; c++)
 			{
-				int cellMineNum = board.GetCellMineNum(r, c);
-				if (cellMineNum == -1)
+				if (board.GetCellState(r, c) == CellState::Opened)
 				{
-					defaultBrush = (HBRUSH)SelectObject(hdc, mineBrush);
+					defaultBrush = (HBRUSH)SelectObject(hdc, openedBrush);
 					Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
+					int cellMineNum = board.GetCellMineNum(r, c);
+					std::wstring cellMineNumText = std::to_wstring(cellMineNum);
+					DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+					SelectObject(hdc, defaultBrush);
 				}
 				else
 				{
 					Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
-					std::wstring cellMineNumText = std::to_wstring(cellMineNum);
-					DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
 				}
-
-				if (clickedRect == std::make_pair(r, c))
-				{
-					Ellipse(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
-				}
-
-				SelectObject(hdc, defaultBrush);
 			}
 		}
 
@@ -136,7 +177,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 					return 0;
 				}
 			}
-
 		}
 
 		clickedRect = { -1,-1 };

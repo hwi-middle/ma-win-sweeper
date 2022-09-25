@@ -15,4 +15,6 @@ public:
 	~Board();
 
 	int GetCellMineNum(int r, int c);
+	CellState GetCellState(int r, int c);
+	void SetCellState(int r, int c, CellState state);
 };

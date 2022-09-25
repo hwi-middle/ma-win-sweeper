@@ -77,3 +77,13 @@ int Board::GetCellMineNum(int r, int c)
 {
 	return m_map[r][c].GetMineNum();
 }
+
+CellState Board::GetCellState(int r, int c)
+{
+	return m_map[r][c].GetCellState();
+}
+
+void Board::SetCellState(int r, int c, CellState state)
+{
+	m_map[r][c].SetCellState(state);
+}
