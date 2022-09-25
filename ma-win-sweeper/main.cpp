@@ -43,19 +43,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 	constexpr int MINE_NUM = 40;
 	constexpr int BOARD_SIZE = 16;
 
-	HBRUSH defaultBrush;
-	HBRUSH openedBrush;
-	HBRUSH markBrush;
-	HBRUSH mineBrush;
-
-	HDC hdc;
-	PAINTSTRUCT ps;
-
-	static bool bIsGameOver = false;
+	static bool bIsCleared = false;
+	static bool bIsDead = false;
 	static Board board(BOARD_SIZE, MINE_NUM);
 	static RECT rects[BOARD_SIZE][BOARD_SIZE];
 	static std::pair<int, int> leftClickedRect = { -1,-1 };
 	static std::pair<int, int> rightClickedRect = { -1,-1 };
+	static int openedCellNum = 0;
 	static int remainMine = MINE_NUM;
 
 	switch (iMessage)
@@ -90,26 +84,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 
 	case WM_PAINT:
 	{
+		HBRUSH defaultBrush;
+		HBRUSH openedBrush = (HBRUSH)GetStockObject(LTGRAY_BRUSH);
+		HBRUSH markBrush = CreateHatchBrush(HS_DIAGCROSS, RGB(255, 0, 0));
+		HBRUSH mineBrush = CreateSolidBrush(RGB(255, 0, 0));
+		HBRUSH clearedMineBrush = CreateSolidBrush(RGB(0, 255, 100));
+
+		HDC hdc;
+		PAINTSTRUCT ps;
+
 		hdc = BeginPaint(hWnd, &ps);
 		SetBkMode(hdc, TRANSPARENT);
-		openedBrush = (HBRUSH)GetStockObject(LTGRAY_BRUSH);
-		markBrush = CreateHatchBrush(HS_DIAGCROSS, RGB(255, 0, 0));
-		mineBrush = CreateSolidBrush(RGB(255, 0, 0));
 		constexpr std::pair<int, int> NOT_CLICKED = { -1,-1 };
 
 		const int leftClickedR = leftClickedRect.first;
 		const int leftClickedC = leftClickedRect.second;
-		if (leftClickedRect != NOT_CLICKED && board.GetCellState(leftClickedR, leftClickedC) == CellState::Closed && !bIsGameOver)
+		if (leftClickedRect != NOT_CLICKED && board.GetCellState(leftClickedR, leftClickedC) == CellState::Closed && !bIsDead && !bIsCleared)
 		{
-			constexpr int DIRECTION_NUM = 8;
-			std::queue<std::pair<int, int>> bfsQueue;
-
 			board.SetCellState(leftClickedR, leftClickedC, CellState::Opened);
+			openedCellNum++;
 			if (board.GetCellMineNum(leftClickedR, leftClickedC) == 0)
 			{
+				constexpr int DIRECTION_NUM = 4;
+				std::queue<std::pair<int, int>> bfsQueue;
 				bfsQueue.push({ leftClickedR , leftClickedC });
-				constexpr int deltaR[DIRECTION_NUM] = { 1,0,-1,0,1,-1,-1,1 };
-				constexpr int deltaC[DIRECTION_NUM] = { 0,1,0,-1,-1,1,-1,1 };
+				constexpr int deltaR[DIRECTION_NUM] = { 1,0,-1,0 };
+				constexpr int deltaC[DIRECTION_NUM] = { 0,1,0,-1 };
 
 				while (!bfsQueue.empty())
 				{
@@ -121,7 +121,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 
 					if (board.GetCellMineNum(curR, curC) != 0)
 					{
-						board.SetCellState(curR, curC, CellState::Opened);
+						if (board.GetCellState(curR, curC) == CellState::Closed)
+						{
+							board.SetCellState(curR, curC, CellState::Opened);
+							openedCellNum++;
+						}
+
 						continue;
 					}
 
@@ -133,19 +138,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 						if (board.GetCellState(newR, newC) != CellState::Closed) continue;
 
 						board.SetCellState(newR, newC, CellState::Opened);
+						openedCellNum++;
 						bfsQueue.push({ newR,newC });
 					}
 				}
 			}
 			else if (board.GetCellMineNum(leftClickedR, leftClickedC) == MINE)
 			{
-				bIsGameOver = true;
+				bIsDead = true;
 			}
+		}
+
+		if (openedCellNum >= BOARD_SIZE * BOARD_SIZE - MINE_NUM)
+		{
+			bIsCleared = true;
 		}
 
 		const int rightClickedR = rightClickedRect.first;
 		const int rightClickedC = rightClickedRect.second;
-		if (rightClickedRect != NOT_CLICKED && !bIsGameOver)
+		if (rightClickedRect != NOT_CLICKED && !bIsDead && !bIsCleared)
 		{
 			if (board.GetCellState(rightClickedR, rightClickedC) == CellState::Closed)
 			{
@@ -159,7 +170,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 			}
 		}
 
-		if (bIsGameOver)
+		if (bIsDead)
 		{
 			for (int r = 0; r < BOARD_SIZE; r++)
 			{
@@ -184,10 +195,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 							defaultBrush = (HBRUSH)SelectObject(hdc, openedBrush);
 							Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
 							int cellMineNum = board.GetCellMineNum(r, c);
-							std::wstring cellMineNumText = std::to_wstring(cellMineNum);
-							DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+							if (cellMineNum != 0)
+							{
+								std::wstring cellMineNumText = std::to_wstring(cellMineNum);
+								DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+							}
 							SelectObject(hdc, defaultBrush);
 						}
+					}
+				}
+			}
+		}
+		else if (bIsCleared)
+		{
+			for (int r = 0; r < BOARD_SIZE; r++)
+			{
+				for (int c = 0; c < BOARD_SIZE; c++)
+				{
+					if (board.GetCellMineNum(r, c) == MINE)
+					{
+						defaultBrush = (HBRUSH)SelectObject(hdc, clearedMineBrush);
+						Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
+						SelectObject(hdc, defaultBrush);
+						DrawText(hdc, TEXT("¡Ü"), lstrlen(TEXT("¡Ü")), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+					}
+					else
+					{
+						defaultBrush = (HBRUSH)SelectObject(hdc, openedBrush);
+						Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
+						int cellMineNum = board.GetCellMineNum(r, c);
+						if (cellMineNum != 0)
+						{
+							std::wstring cellMineNumText = std::to_wstring(cellMineNum);
+							DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+						}
+						SelectObject(hdc, defaultBrush);
 					}
 				}
 			}
@@ -203,15 +245,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 						defaultBrush = (HBRUSH)SelectObject(hdc, openedBrush);
 						Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
 						int cellMineNum = board.GetCellMineNum(r, c);
-						std::wstring cellMineNumText = std::to_wstring(cellMineNum);
-						DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+						if (cellMineNum != 0)
+						{
+							std::wstring cellMineNumText = std::to_wstring(cellMineNum);
+							DrawText(hdc, cellMineNumText.c_str(), cellMineNumText.length(), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+						}
 						SelectObject(hdc, defaultBrush);
 					}
 					else if (board.GetCellState(r, c) == CellState::MarkedAsMine)
 					{
 						defaultBrush = (HBRUSH)SelectObject(hdc, markBrush);
 						Rectangle(hdc, rects[r][c].left, rects[r][c].top, rects[r][c].right, rects[r][c].bottom);
-						DrawText(hdc, TEXT("¡Ü"), lstrlen(TEXT("¡Ü")), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+						DrawText(hdc, TEXT("¡Ú"), lstrlen(TEXT("¡Ü")), &rects[r][c], DT_SINGLELINE | DT_CENTER | DT_VCENTER);
 						SelectObject(hdc, defaultBrush);
 					}
 					else
@@ -222,19 +267,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 			}
 		}
 
-
-
-		LPCTSTR description = TEXT("Press 'R' to Restart");
-
 		RECT clientRect;
 		GetClientRect(hWnd, &clientRect);
-
 		RECT descriptionRect = { 0, 20, clientRect.right, 50 };
-		DrawText(hdc, description, lstrlen(description), &descriptionRect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
 
-		RECT mineNumRect = { 400, 20, clientRect.right, 50 };
-		std::wstring remainMineText = std::to_wstring(remainMine);
-		DrawText(hdc, remainMineText.c_str(), remainMineText.length(), &mineNumRect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+		if (bIsDead)
+		{
+			LPCTSTR description = TEXT("BOOM! Press 'R' to Restart");
+			DrawText(hdc, description, lstrlen(description), &descriptionRect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+		}
+		else if (bIsCleared)
+		{
+			LPCTSTR description = TEXT("YOU MADE IT!! Press 'R' to Restart");
+			DrawText(hdc, description, lstrlen(description), &descriptionRect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+		}
+		else
+		{
+			std::wstring t = std::to_wstring(remainMine) + L" mine(s) left";
+			DrawText(hdc, t.c_str(), t.length(), &descriptionRect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+		}
 
 		leftClickedRect = NOT_CLICKED;
 		rightClickedRect = NOT_CLICKED;
@@ -299,10 +350,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT iMessage, WPARAM wParam, LPARAM lParam)
 		switch (wParam)
 		{
 		case 'r':
-			board.InitMap();
-			bIsGameOver = false;
-			remainMine = MINE_NUM;
-			InvalidateRect(hWnd, NULL, TRUE);
+			if (bIsDead || bIsCleared)
+			{
+				board.InitMap();
+				bIsDead = false;
+				bIsCleared = false;
+				openedCellNum = 0;
+				remainMine = MINE_NUM;
+				InvalidateRect(hWnd, NULL, TRUE);
+			}
+
 			break;
 		}
 		return 0;
