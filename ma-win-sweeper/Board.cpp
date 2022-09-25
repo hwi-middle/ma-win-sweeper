@@ -13,6 +13,30 @@ Board::Board(const int size, const int mineAmount)
 		m_map[i] = new Cell[m_size];
 	}
 
+	InitMap();
+}
+
+Board::~Board()
+{
+	for (int i = 0; i < m_size; i++)
+	{
+		delete[] m_map[i];
+	}
+
+	delete[] m_map;
+}
+
+void Board::InitMap()
+{
+	for (int i = 0; i < m_size; i++)
+	{
+		for (int j = 0; j < m_size; j++)
+		{
+			m_map[i][j].SetCellState(CellState::Closed);
+			m_map[i][j].SetMineNum(0);
+		}
+	}
+
 	// 랜덤한 위치에 지뢰 심기
 	srand(time(nullptr));
 	int r = 0;
@@ -51,26 +75,6 @@ Board::Board(const int size, const int mineAmount)
 		// 지뢰 수 증가
 		mineCount++;
 	}
-
-	// 임시로 생성자에서 보여줌, 추후 구현에 따라 분리
-	for (int i = 0; i < m_size; i++)
-	{
-		for (int j = 0; j < m_size; j++)
-		{
-			std::cout << m_map[i][j].GetMineNum() << " ";
-		}
-		std::cout << "\n";
-	}
-}
-
-Board::~Board()
-{
-	for (int i = 0; i < m_size; i++)
-	{
-		delete[] m_map[i];
-	}
-
-	delete[] m_map;
 }
 
 int Board::GetCellMineNum(int r, int c)
